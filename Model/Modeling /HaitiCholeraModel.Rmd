@@ -1,0 +1,366 @@
+
+**the cholera model run with different parameters**
+
+```{r}
+#reading in 
+library(readr)
+library(dplyr)
+library(readxl)
+library(ggplot2)
+cholinc <- read_excel("choleracases.xlsx")
+
+cholinc <- cholinc %>% mutate ("time" = seq(1:82)) #adding time column 
+
+```
+
+```{r}
+#vectorizing 
+time <- cholinc$time
+IncData <- cholinc$Cases
+numPoints <- length(time)
+```
+
+```{r}
+## Visualize the data:
+library(ggplot2)
+ggplot(cholinc, aes(x = time, y = IncData)) + geom_point() +
+  geom_line(data = cholinc, aes(x = time, y = IncData))
+
+```
+
+```{r}
+#running the model
+SIRD <- function(time, state, theta) {
+  ## Parameters:
+  delta <- case_when(
+    time >= 0 & time <= 9 ~ theta["decaylow"],
+    time >= 20 & time <= 31 ~ theta["decaylow"],
+    time >= 63 & time <= 69 ~ theta["decaylow"], #decay rates from Codeco paper
+    TRUE ~ theta["decayhigh"]
+  )
+  gamma <- 1 / theta["Duration"]
+  psi <- theta["psi"]
+  kappa <-  theta["kappa"]
+  mu <- theta["mu"]
+  epsilon <- theta["epsilon"]
+  
+  ## States:
+  S <- state["S"]
+  I <- state["I"]
+  R <- state["R"]
+  D <- state["D"]
+  W <- state["W"]
+  
+  
+  ## ODEs:
+  dS <- -(W/(kappa+W)) * psi * S 
+  dI <- (W/(kappa+W)) * psi * S - (gamma + mu) * I
+  dR <- gamma * I
+  dD <- mu*I
+  dW <- epsilon*I - delta*W
+ 
+  
+  return(list(c(dS, dI, dR, dD, dW)))
+}
+```
+
+#derived incidence
+  incidence <- ((W/(kappa+W)) * psi * S)
+  
+#derived CFR
+ CFR <- mu*I / (mu *I + gamma * I)
+
+
+```{r}
+library(deSolve)
+
+#theta from MCMC estimation 1
+
+thetamcmc1 <- c(decayhigh = 1/3, #from cholera dynamics for public health practitioners 
+                decaylow = 1/41, 
+                Duration = .29, #2/7th of a week, rate of leaving is inverted 
+                psi = .00624, #MCMC 
+                mu = .012, #death rate (CFR)
+                epsilon = 117.64, #mcmc vibrio/ml*person*week
+                kappa = 1033003) #MCMC, vibrio/ml at which 50% infection is achieved (lower than literature)
+
+
+#initial state (ouest population)
+initState <- c(S = (4*10^6)-1, I = 1, R=0, D = 0, W = 4000)
+
+#trajectory of model 1 using MCMC 1 values and literature values
+trajmcmc1 <- data.frame(ode(y=initState, times=seq(from = 0 , to = 52*4, by = .1), func=SIRD,parms=thetamcmc1, method = "ode45"))  %>% 
+  mutate ('R0' = thetamcmc1[['Duration']] * thetamcmc1[['psi']] * (W/(thetamcmc1[['kappa']] + W))) #coding for variable R0
+
+plotR0 <- trajmcmc1 %>% 
+  ggplot(aes(x = time, y = data, color = State)) +
+  geom_line(aes(y = R0, col = "R0"), linewidth = 1.2)
+plotR0
+
+plotmcmc1 <- trajmcmc1 %>% 
+  ggplot(aes(x = time, y = data, color = State)) +
+  geom_line(aes(y = D, col = "D"), linewidth = 1.2) +
+  geom_line(aes(y = S, col = "S"), linewidth = 1.2) +
+  geom_line(aes(y = I, col = "I"), linewidth = 1.2) +
+  geom_line(aes(y = R, col = "R"), linewidth = 1.2)
+plotmcmc1
+
+
+plotmcmc1.I <- trajmcmc1 %>% 
+  ggplot(aes(x = time, y = data, color = State)) +
+  geom_line(aes(y = I, col = "I"), linewidth = 1.2)
+plotmcmc1.I
+```
+
+```{r}
+#solving for easy R0
+
+thetamcmc1 <- c(decayhigh = 1/3, #from cholera dynamics for public health practitioners 
+                decaylow = 1/41, 
+                Duration = .29, #2/7th of a week, rate of leaving is inverted 
+                psi = .00624, #MCMC 
+                mu = .012, #death rate (CFR)
+                epsilon = 117.64, #mcmc vibrio/ml*person*week
+                kappa = 1033003) #MCMC, vibrio/ml at which 50% infection is achieved (lower than literature)
+
+
+
+R0e <- .00624 * 4.28 * (1033003/(1033003+1033003))
+R0e
+```
+
+```{r}
+#parameters from redone MCMC (beimnets code)
+
+thetamcmc2 <- c(decayhigh = 1/3, decaylow = 1/41, Duration = 0.29605, 
+           psi = 0.02634, kappa = 880109.75, mu = .012, epsilon = 35)
+
+
+#initial state (ouest population)
+initState <- c(S = (4*10^6)-1, I = 1, R=0, D = 0, W = 4000)
+
+
+trajmcmc2 <- data.frame(ode(y=initState, times=seq(from = 0 , to = 52*4, by = 0.1), func=SIRD, parms=thetamcmc2, method = "ode45"))  
+
+
+
+plot1 <- traj1 %>% 
+  ggplot(aes(x = time, y = data, color = State)) +
+  geom_line(aes(y = S, col = "S"), linewidth = 1.2) +
+  geom_line(aes(y = D, col = "D"), linewidth = 1.2) +
+  geom_line(aes(y = I, col = "I"), linewidth = 1.2) +
+  geom_line(aes(y = R, col = "R"), linewidth = 1.2)
+plot1
+
+plot2 <- traj1 %>% 
+  ggplot(aes(x = time, y = data, color = State)) +
+  geom_line(aes(y = R, col = "R"), linewidth = 1.2)
+plot2
+
+
+```
+
+
+
+```{r}
+
+theta2 <- c(decayhigh = 1/3, decaylow = 1/41, Duration = 2/7, 
+            psi = 10^-1.5, kappa = 10^5, mu = .012, epsilon = 35)
+
+initState <- c(S = 10^6, I = 1, R = 0, D = 0, W = 0, incidence = 0, CFR = 0)
+
+traj <- data.frame(ode(y=initState, times=seq(from = 0 , to = 82, by = 1), func=SIRD,
+                       parms=theta2, method = "ode45")) 
+
+
+
+```
+
+
+
+
+
+
+
+initState <- c(S=2e6-1, I = 1, R=0, D =0, W = 0, incidence = 0)
+traj <- data.frame(ode(y=initState, times=seq(from = 0 , to = 82, by = 1), func=SIRD,
+                       parms=theta1, method = "ode45"))
+
+plot <- traj %>% 
+  ggplot(aes(x = time, y = data, color = State)) +
+  geom_line(aes(y = S, col = "S"), linewidth = 1.2) +
+  geom_line(aes(y = D, col = "D"), linewidth = 1.2) +
+  geom_line(aes(y = I, col = "I"), linewidth = 1.2) +
+  geom_line(aes(y = R, col = "R"), linewidth = 1.2)
+plot
+
+Infectedplot <- traj %>% 
+  ggplot(aes(x = time, y = data, color = State)) +
+geom_line(aes(y = I, col = "I"), linewidth = 1.2) 
+
+Infectedplot
+
+Incidenceplot <- traj %>% 
+  ggplot(aes(x = time, y = data, color = State)) +
+geom_line(aes(y = incidence, col = "incidence"), linewidth = 1.2) 
+
+Incidenceplot
+
+
+## Prior function:
+logPrior <- function(theta) {
+  # Prior on R0:
+  logPriorkappa <- dunif(theta[["kappa"]], min = 10^5, max = 10^6, log = TRUE)
+  
+  return(logPriorkappa)
+}
+
+## Likelihood function for a single data point:
+pointLogLike <- function(i, IncData, IncModel) {
+  # Incidence is observed through a Poisson process.
+  poissonLike <- dpois(x=IncData[i], lambda=IncModel[i], log=TRUE)
+  if (is.na(poissonLike)) {
+    return( -Inf )
+  } else {
+    return( poissonLike )
+  }
+}
+
+## Likelihood function for all data points:
+trajLogLike <- function(time, IncData, theta, initState) {
+  trajModel <- data.frame(ode(y=initState, times=time, func=SIRD,
+                              parms=theta, method = "ode45"))
+
+  IncModel <-   trajModel$I
+  
+  logLike <- 0
+  for (i in 1:length(time)) {
+    logLike <- logLike + pointLogLike(i, IncData, IncModel)
+  }
+  return(logLike)
+}
+
+## Posterior function:
+logPosterior <- function(time, IncData, theta, initState) {
+  ## Calculate the log prior (logPrior) for the vector of model
+  ## parameters (theta).
+  logPrior <- logPrior(theta)
+  
+  ## Calculate the log likelihood (logLike) of the data given theta, the
+  ## incidence data (IncData), and the initial values of the state
+  ## variables (initState).
+  logLike <- trajLogLike(time, IncData, theta, initState)
+  
+  logPosterior <- logPrior + logLike
+  return(logPosterior)
+}
+
+logPosteriorMH <- function(MHparams) {
+  return(logPosterior(time, IncData,
+                      theta = c(MHparams, decayhigh = 1/3, decaylow = 1/41, Duration = 2/7, 
+                                psi = 10^-1.9, mu = .012, epsilon = 35),
+                      initState = c(S=2500000 - 1, I=1, R=0, D = 0, W = 0)))
+}
+
+## test
+
+MHparams <- c(kappa = 10^6)
+
+logPosteriorMH(MHparams)
+
+
+
+#############HASTINGS ALGO####################################
+
+library(truncnorm)
+
+mcmcMH <- function(posterior, initTheta, proposalSD, numIterations) {
+  
+  # Evaluate the function "posterior" at "initTheta", and assign to a
+  # variable called posteriorThetaCurrent.
+  posteriorThetaCurrent <- posterior(initTheta)
+  
+  # Initialise variables to store the current value of theta, the
+  # vector of sample values, and the number of accepted proposals.
+  thetaCurrent <- initTheta
+  samples <- initTheta
+  accepted <- 0
+  
+  # Run the MCMC algorithm for numIterations interations.
+  for (i in 1:numIterations) {
+    
+    # Draw a new theta from a Gaussian proposal distribution and
+    # assign this to a variable called thetaProposed.
+    thetaProposed <- rnorm(n = length(thetaCurrent),
+                           mean = thetaCurrent, sd = proposalSD)
+    
+    # Assign names to the thetaProposed vector.
+    names(thetaProposed) <- names(thetaCurrent)
+    
+    # Evaluate the log) posterior function at the proposed theta
+    # value and assign to a variable called
+    # posteriorThetaProposed.
+    posteriorThetaProposed <- posterior(thetaProposed)
+    
+    # Compute the Metropolis-Hastings (log) acceptance
+    # probability and assign to a variable called
+    # logAcceptance.
+    logAcceptance <- posteriorThetaProposed -posteriorThetaCurrent
+    
+    # Draw a random number uniformly-distributed between 0 and 1
+    # using "runif" and assign to a variable called randNum.
+    randNum <- runif(n = 1, min = 0, max = 1)
+    
+    # Use the random number and the acceptance probability to
+    # determine if thetaProposed will be accepted.
+    if (randNum < exp(logAcceptance)) {
+      
+      # If accepted, change the current value of theta to the
+      # proposed value of theta.
+      thetaCurrent <- thetaProposed
+      
+      # And update the current value of the posterior
+      # function.
+      posteriorThetaCurrent <- posteriorThetaProposed
+      
+      # And update number of accepted proposals.
+      accepted <- accepted + 1
+    }
+    
+    # Add the current theta to the vector of samples.
+    samples <- c(samples, thetaCurrent)
+    
+    # Print the current state of chain and acceptance rate.
+    cat("iteration:", i, "chain:", thetaCurrent,
+        "acceptance rate:", accepted / i, "\n")
+  }
+  return(samples)
+}
+
+
+mcmcTrace <- mcmcMH(posterior = logPosteriorMH, # posterior distribution
+                    initTheta = c(kappa = 500000, ), # intial parameter guess
+                    proposalSD = c(500000*.01), # standard deviations of #0.075
+                    # parameters for Gaussian proposal distribution
+                    numIterations = 2000)
+
+trace <- matrix(mcmcTrace, ncol = 1, byrow = T)
+
+
+
+# Use the package "coda" to convert the trace into this format:
+library(coda)
+trace.1st <- mcmc(trace)
+plot(trace.1st)
+summary(trace.1st)
+
+
+
+
+
+
+
+
+
+
+

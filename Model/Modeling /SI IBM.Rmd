@@ -1,0 +1,17 @@
+sim1 <- SI_ibm(initState, theta, numIter)
+odeSI <- data.frame(ode(y = initState, 
+                        times = seq(numIter), 
+                        func=SI_ode, parms=theta, method = "ode45"))
+
+numI_ODE <- odeSI$I
+numI_IBM <- sim1$numI
+numI <- data.frame(time = seq(numIter), numI_ODE, numI_IBM)
+
+# Plot number of infectious individuals over time alongside the
+# deterministic model predictions:
+ggplot(numI, aes(x = time, y = value, color = Framework)) +
+  geom_line(aes(y = numI_IBM, col = "IBM"), size = 1.2) + 
+  geom_line(aes(y = numI_ODE, col = "ODE"), size = 1.2) + 
+  labs(x = "Time (days)", y = "Number of individuals")
+
+

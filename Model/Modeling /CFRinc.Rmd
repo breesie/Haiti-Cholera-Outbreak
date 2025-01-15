@@ -1,0 +1,66 @@
+# Load necessary libraries
+library(deSolve)
+library(tidyverse)
+
+# Define the SIRD model function
+SIRD <- function(time, state, theta) {
+  ## Parameters:
+  delta <- case_when(
+    time >= 0 & time <= 9 ~ theta["decaylow"],
+    time >= 20 & time <= 31 ~ theta["decaylow"],
+    time >= 63 & time <= 69 ~ theta["decaylow"],
+    TRUE ~ theta["decayhigh"]
+  )
+  gamma <- 1 / theta["Duration"]
+  psi <- theta["psi"]
+  kappa <- theta["kappa"]
+  mu <- theta["mu"]
+  epsilon <- theta["epsilon"]
+  
+  ## States:
+  S <- state["S"]
+  I <- state["I"]
+  R <- state["R"]
+  D <- state["D"]
+  W <- state["W"]
+  N <- S + I + R + D
+  
+  ## ODEs:
+  dS <- -(W / (kappa + W)) * psi * S 
+  dI <- (W / (kappa + W)) * psi * S - (gamma + mu) * I
+  dR <- gamma * I
+  dD <- mu * I
+  dW <- epsilon * I - delta * W
+  
+  return(list(c(dS, dI, dR, dD, dW)))
+}
+
+# Parameters for the model
+theta <- c(decayhigh = 1/(19/7), decaylow = (1/(19/7))/10, Duration = 10/7, 
+           psi = 10^-1.9, kappa = 10^5 * 1000, mu = 1/10.6, epsilon = 10^10 * 168)
+
+# Initial state values
+initState <- c(S = 2e6 - 1, I = 1, R = 0, D = 0, W = 0)
+
+# Simulate the model
+times <- seq(from = 0, to = 82, by = 1)
+traj <- as.data.frame(ode(y = initState, times = times, func = SIRD, parms = theta, method = "ode45"))
+
+# Calculate the incidence manually
+traj <- traj %>%
+  mutate(incidence = (W / (theta["kappa"] + W)) * theta["psi"] * S)
+
+# Calculate the CFR
+gamma <- 1 / theta["Duration"]
+mu <- theta["mu"]
+CFR <- mu / (mu + gamma)
+
+# Plot the incidence and CFR
+ggplot(traj, aes(x = time)) +
+  geom_line(aes(y = incidence), color = "blue") +
+  labs(title = "Incidence and CFR over Time", x = "Time", y = "Value") +
+  geom_hline(aes(yintercept = CFR), color = "red", linetype = "dashed") +
+  annotate("text", x = 40, y = CFR + 0.001, label = paste("CFR =", round(CFR, 4)), color = "red") +
+  theme_minimal()
+
+
